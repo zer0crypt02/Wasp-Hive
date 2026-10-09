@@ -32,6 +32,7 @@ compile_stub_tmp.cpp
 key.pem
 cert.pem
 auth_param.dat
+psk.txt
 
 # ---- Agent/tool workspace internals (not project code) ----
 .omo/
