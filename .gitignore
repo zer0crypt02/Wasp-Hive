@@ -1,0 +1,44 @@
+# ---- Build artifacts ----
+RSW
+sys_check.exe
+MWare.exe
+svchost_helper.exe
+loader_stub_v5.exe
+MWare-bin
+MWare-gui
+Screen2
+UserEventAgent
+*.o
+*.obj
+*.a
+*.res.bak
+
+# ---- Logs ----
+*.log
+build_*.log
+rebuild_*.log
+
+# ---- Runtime / temp artifacts ----
+target.txt.*
+target.txt
+.padding_cache.bin
+.DS_Store
+__pycache__/
+*.pyc
+compile_stub_tmp.cpp
+*_tmp.cpp
+
+# ---- Secrets / generated material (never commit) ----
+key.pem
+cert.pem
+auth_param.dat
+
+# ---- Agent/tool workspace internals (not project code) ----
+.omo/
+.freebuff/
+.agents/
+
+# ---- Test scratch output ----
+*.packed
+*_test_bin
+test_keyexfil_bot

@@ -1,0 +1,29 @@
+{
+    "configurations": [
+        {
+            "name": "Win-MinGW",
+            "includePath": [
+                "/usr/local/wx-mingw/include/wx-3.2",
+                "/usr/local/wx-mingw/lib/wx/include/x86_64-w64-mingw32-msw-unicode-static-3.2",
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_FILE_OFFSET_BITS=64",
+                "__WXMSW__",
+                "wxDEBUG_LEVEL=0",
+                "_WIN32",
+                "WIN32",
+                "_WIN64",
+                "WIN64",
+                "_CRT_SECURE_NO_WARNINGS",
+                "NOMINMAX",
+                "HEADLESS"
+            ],
+            "compilerPath": "/usr/local/bin/x86_64-w64-mingw32-g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
