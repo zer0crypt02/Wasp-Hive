@@ -92,7 +92,7 @@ $(C2_CLIENT_TARGET): $(C2_CLIENT_SRCS)
 # No TLS certificates required — zero-config startup.
 # ============================================================================
 RSW_TARGET = RSW
-RSW_SRC = RSW.cpp MWare/crypto.cpp
+RSW_SRC = RSW.cpp rsw_protocol.cpp MWare/crypto.cpp
 
 $(RSW_TARGET): $(RSW_SRC)
 	$(MAC_CC) -std=c++17 -O2 -Wall -Wextra -I MWare/ $(RSW_SRC) -o $(RSW_TARGET) -lpthread

