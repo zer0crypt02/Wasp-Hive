@@ -30,6 +30,7 @@
 
 - [What it does](#-what-it-does)
 - [Modules](#-modules)
+- [Download](#-download)
 - [Build](#-build)
 - [Run](#-run)
 - [Screenshots](#-screenshots)
@@ -79,6 +80,38 @@ Behind the note, every module in the framework is real code.
 
 The demo password is `WaspHive2024!` — it is compiled into `crypto.cpp` on purpose.
 It is not a secret and not meant to be one.
+
+---
+
+## ⬇️ Download
+
+Prebuilt Windows binaries are attached to
+[**v0.1**](https://github.com/zer0crypt02/Wasp-Hive/releases/tag/v0.1) — built from this
+very tree with MinGW 14, so they match the source above rather than the v5 pipeline
+artifacts behind the VirusTotal numbers further down.
+
+| Asset | Size | What it is |
+|---|---|---|
+| [`MWare.exe`](https://github.com/zer0crypt02/Wasp-Hive/releases/download/v0.1/MWare.exe) | 8.4 MB | full-screen ransom note + demo encryption, spawns the bot on unlock |
+| [`sys_check.exe`](https://github.com/zer0crypt02/Wasp-Hive/releases/download/v0.1/sys_check.exe) | 1.2 MB | the headless C2 bot on its own, no GUI |
+
+```
+sha256
+25e14d4d677cdea3016c1f8cb1a7920918db7f83bc6a29f2f856a9b6ec7baafe  MWare.exe
+00f1415a481cc8dafa14501e94045e6dc81c43a2724a1b857e6200823f9d284c  sys_check.exe
+```
+
+Four things to know before you double-click them:
+
+- 🔏 **Unsigned.** SmartScreen shows *"Windows protected your PC"* → *More info →
+  Run anyway*. No certificate exists for this and none is planned.
+- 🪟 **Windows 10/11 only.** They link against the UCRT, which ships with the OS. On
+  7/8 they fail with a missing `api-ms-win-crt-*` unless the Universal CRT update is
+  installed.
+- 📁 **Run from a writable folder.** From `C:\Windows\System32` the demo cannot create
+  `target.txt` and exits without doing anything visible.
+- 🍎 **No macOS binary.** `make mac-gui` builds it locally instead; an unsigned bundle
+  would only bounce off Gatekeeper anyway.
 
 ---
 
