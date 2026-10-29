@@ -123,8 +123,8 @@ standard library except the GUI, which is wxWidgets.
 
 | Tool | Version verified here | Needed for | How to get it |
 |---|---|---|---|
-| Xcode Command Line Tools (`clang++`) | Apple clang 16.0.0 | every macOS target | `xcode-select --install` |
-| GNU Make | 3.81 (system) | every target | preinstalled on macOS |
+| Apple Clang (`clang++`) | Apple clang 16.0.0 | every macOS target | already on macOS — no Xcode app needed |
+| GNU Make | 3.81 | every target | already on macOS |
 | wxWidgets | 3.3.1 | `MWare-gui` | `brew install wxwidgets` |
 | mingw-w64 cross toolchain | 14.0.0 | `MWare.exe`, `sys_check.exe` | `brew install mingw-w64` |
 | **static** wxWidgets for MinGW | 3.2.6 | `MWare.exe` (GUI) | must be built, see below |
@@ -132,8 +132,15 @@ standard library except the GUI, which is wxWidgets.
 ### 🍎 One command for macOS
 
 ```bash
-xcode-select --install            # clang++, make
 brew install wxwidgets mingw-w64  # macOS GUI + Windows cross toolchain
+```
+
+That is the whole macOS setup. `clang++` and `make` ship with the system, so nothing
+is installed for them. If your machine somehow lacks a compiler, the only thing you
+need is the **Command Line Tools** — not Xcode:
+
+```bash
+xcode-select --install            # ~1 GB; installs clang++, make, headers
 ```
 
 ### 🪟 Static wxWidgets for the Windows GUI
@@ -170,6 +177,8 @@ explicit exception for distributing binaries built against it, so the assets in 
 
 ### 🚫 What you do *not* need
 
+- **Xcode** — the IDE is never touched. No `.xcodeproj`, no `xcodebuild`, no iPhone SDK;
+  the build is a plain Makefile calling the compiler that comes with macOS.
 - **OpenSSL** — `MWare/tls_wrapper.{h,cpp}` is a leftover from the TLS era and is not in
   `SRCS`; the wire protocol is raw TCP. Only `make cert` touches certificates, and it
   shells out to the system `openssl` binary.
