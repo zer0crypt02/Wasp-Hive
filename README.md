@@ -32,6 +32,7 @@
 - [Modules](#-modules)
 - [Build](#-build)
 - [Run](#-run)
+- [Screenshots](#-screenshots)
 - [Tests](#-tests)
 - [Layout](#-layout)
 - [Security design notes](#-security-design-notes)
@@ -120,6 +121,34 @@ RSW_PSK="shared-secret" ./RSW   # enable mutual-auth PSK (else ECDH-only mode)
 ```
 
 The PSK can also live in `psk.txt` next to the binary — that file is git-ignored.
+
+---
+
+## 🖼️ Screenshots
+
+
+### 🖥️ C2 Server Terminal
+
+```
+ ______    ______   __ __ __             ______   _____
+/_____/\  /_____/\ /_//_//_/\           /_____/\ /_____/\
+\:::_ \ \ \::::_\/_\:\\:\\:\ \   _______\:::__\/ \:::_:\ \
+ \:(_) ) )_\:\/___/\\:\\:\\:\ \ /______/\\:\ \  __   _\:\|
+  \: __ `\ \ \_::._\:\\:\\:\\:\ \\__::::\/ \:\ \/_/\ /::_/__
+   \ \ `\ \ \ /____\:\\:\\:\\:\ \          \:\_\ \ \\:\____/\
+    \_\/ \_\/ \_____\/ \_______\/           \_____\/ \_____\/
+
+            Remote Controllable Ransomware Server
+                      by Zer0 Crypt0
+
+═══════════════════════════════════════════════════
+    RanSomWare C2 Server v1.0
+    Type 'help' for available commands
+═══════════════════════════════════════════════════
+
+[*] Starting C2 Server on 0.0.0.0:8080...
+[+] Server listening on 0.0.0.0:8080
+```
 
 ---
 
@@ -223,12 +252,12 @@ were submitted to VirusTotal after release.
 <div align="center">
 
 <a href="docs/screenshots/vt-packed_mware_v5-0of59.jpg">
-  <img src="docs/screenshots/vt-packed_mware_v5-0of59.jpg" width="42%"
+  <img src="docs/screenshots/vt-packed_mware_v5-0of59.jpg" height="420"
        alt="VirusTotal report: 0 of 59 engines detect packed_mware_v5.exe">
 </a>
 &nbsp;
 <a href="docs/screenshots/vt-svchost_helper-2of69.jpg">
-  <img src="docs/screenshots/vt-svchost_helper-2of69.jpg" width="42%"
+  <img src="docs/screenshots/vt-svchost_helper-2of69.jpg" height="420"
        alt="VirusTotal report: 2 of 69 engines detect svchost_helper.exe">
 </a>
 
