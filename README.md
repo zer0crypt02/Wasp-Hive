@@ -252,12 +252,12 @@ were submitted to VirusTotal after release.
 <div align="center">
 
 <a href="docs/screenshots/vt-packed_mware_v5-0of59.jpg">
-  <img src="docs/screenshots/vt-packed_mware_v5-0of59.jpg" height="420"
+  <img src="docs/screenshots/vt-packed_mware_v5-0of59.jpg" width="45%"
        alt="VirusTotal report: 0 of 59 engines detect packed_mware_v5.exe">
 </a>
 &nbsp;
 <a href="docs/screenshots/vt-svchost_helper-2of69.jpg">
-  <img src="docs/screenshots/vt-svchost_helper-2of69.jpg" height="420"
+  <img src="docs/screenshots/vt-svchost_helper-2of69.jpg" width="45%"
        alt="VirusTotal report: 2 of 69 engines detect svchost_helper.exe">
 </a>
 
@@ -267,8 +267,10 @@ were submitted to VirusTotal after release.
 
 <br>
 
-Both are unedited photos of the screen, so the address bar, the "last analysis date"
-and the SHA-256 of the exact file that was scanned are all still in frame.
+Both are photos of the screen. The only edit is that the taller one had the blurry
+keyboard strip at the bottom trimmed off, so the two are both square and line up side
+by side; the address bar, the "last analysis date" and the SHA-256 of the exact file
+that was scanned are all still in frame.
 
 ### 🧠 How to read a scan count
 
