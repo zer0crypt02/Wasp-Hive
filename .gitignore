@@ -1,5 +1,8 @@
-# ---- Legacy monolith (superseded by MWare/, kept on disk only) ----
+# ---- Legacy monolith + its backups (superseded by MWare/, on disk only) ----
 /MWare.cpp
+/MWare.cpp.bak
+/MWare_original.cpp
+/MWare_original.cpp.bak
 
 # ---- Build artifacts ----
 RSW
@@ -42,14 +45,29 @@ key.pem
 cert.pem
 auth_param.dat
 psk.txt
-# Local env files (Archil key + region). .env.example stays tracked.
+# Local env files (Archil key + region) — agent tooling, not this project.
 .env
 .env.local
+.env.example
 
 # ---- Agent/tool workspace internals (not project code) ----
 .omo/
 .freebuff/
 .agents/
+/CLAUDE.md
+/Claude Fable 5.md
+/claude.json
+/skills-lock.json
+/graphify-out/
+/opencode-proxy/
+/scripts/
+
+# ---- Unrelated side projects that happen to live in this folder ----
+/Reaper-main/
+/jvmtest/
+/samfw_decrypt.py
+/fus_probe.py
+/fus_probe2.py
 
 # ---- Test scratch output ----
 *.packed
