@@ -161,6 +161,46 @@ Known limitations, stated up front:
 
 ---
 
+## Detection results
+
+Two builds from the v5 packaging pipeline — `build_v5.py` (polymorphic decryptor,
+section padding, fake import table) with `loader_stub_v5.cpp` (module stomping) —
+were submitted to VirusTotal after release.
+
+| Build | File | Size | VirusTotal | Engines that fired |
+|---|---|---|---|---|
+| v5 Build #2 | `packed_mware_v5.exe` | 40.21 MB | **0 / 59** | — clean across the board |
+| v5, headless `sys_check.exe` payload | `svchost_helper.exe` | 67.07 MB | **2 / 69** | Bkav Pro → `W32.Malware.FF88E9E1`, SecureAge → `Malicious` |
+
+<p align="center">
+  <img src="docs/screenshots/vt-packed_mware_v5-0of59.jpg" width="45%"
+       alt="VirusTotal report: 0 of 59 engines detect packed_mware_v5.exe">
+  <img src="docs/screenshots/vt-svchost_helper-2of69.jpg" width="45%"
+       alt="VirusTotal report: 2 of 69 engines detect svchost_helper.exe">
+</p>
+
+Both screenshots show the SHA-256 of the exact file that was scanned.
+
+How to read this, because a scan count is easy to over-read:
+
+- **A clean static scan is not invisibility.** 0/59 means the bytes on disk match
+  no engine's signature, which is what packing is for. It says nothing about
+  runtime behaviour — an EDR watching process injection, a memory scanner, or a
+  human analyst in a sandbox will still see the technique. Detection engineering
+  is exactly the audience this repo is written for.
+- **It is not a property of the current source tree.** These two binaries came out
+  of the v5 pipeline, which is still in the repo (`build_v5.py`,
+  `polymorphic_decryptor.py`, `loader_stub_v5.cpp`), but `make` builds a different
+  artifact today. Rebuild and re-scan before quoting a number about your own build.
+- **The two remaining hits are generic heuristics, not family attribution.**
+  Bkav Pro reports a hash-suffixed name with no family (`W32.Malware.FF88E9E1`),
+  SecureAge reports plain `Malicious`. Neither identifies what the program does.
+- **Scores drift.** Engines add signatures continuously, and VirusTotal rotates
+  which engines are enabled per scan (59, 62 and 69 here across builds), so today's
+  count is not the count you will see tomorrow.
+
+---
+
 ## Legal
 
 This repository is a **simulation for authorized security work**: your own lab,
