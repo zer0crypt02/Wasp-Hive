@@ -1,3 +1,6 @@
+# ---- Legacy monolith (superseded by MWare/, kept on disk only) ----
+/MWare.cpp
+
 # ---- Build artifacts ----
 RSW
 sys_check.exe
