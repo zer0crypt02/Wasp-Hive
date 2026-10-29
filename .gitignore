@@ -18,9 +18,15 @@ UserEventAgent
 build_*.log
 rebuild_*.log
 
+# ---- Test build output ----
+build/
+
 # ---- Runtime / temp artifacts ----
 target.txt.*
 target.txt
+
+# ---- Loose screenshots / dumps pasted from chat clients ----
+file_*.png
 .padding_cache.bin
 .DS_Store
 __pycache__/
@@ -33,6 +39,9 @@ key.pem
 cert.pem
 auth_param.dat
 psk.txt
+# Local env files (Archil key + region). .env.example stays tracked.
+.env
+.env.local
 
 # ---- Agent/tool workspace internals (not project code) ----
 .omo/

