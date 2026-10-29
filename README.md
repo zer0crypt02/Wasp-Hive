@@ -5,6 +5,10 @@ training, EDR/AV detection engineering and malware-analysis courses. Everything 
 in your own lab: the "victim" file is a 3-line text file created next to the binary,
 the decryption password is a fixed test constant, and nothing leaves the host.
 
+<p align="center">
+  <img src="wasp_logo.png" width="180" alt="THE WASP HIVE emblem">
+</p>
+
 > **Authorized use only.** Point this at systems you own or have written permission
 > to test. See [Legal](#legal) before you build it.
 
