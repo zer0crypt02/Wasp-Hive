@@ -179,7 +179,8 @@ were submitted to VirusTotal after release.
        alt="VirusTotal report: 2 of 69 engines detect svchost_helper.exe">
 </p>
 
-Both screenshots show the SHA-256 of the exact file that was scanned.
+Both are unedited photos of the screen, so the address bar, the "last analysis date"
+and the SHA-256 of the exact file that was scanned are all still in frame.
 
 How to read this, because a scan count is easy to over-read:
 
