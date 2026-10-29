@@ -31,6 +31,7 @@
 - [What it does](#-what-it-does)
 - [Modules](#-modules)
 - [Download](#-download)
+- [Dependencies](#-dependencies)
 - [Build](#-build)
 - [Run](#-run)
 - [Screenshots](#-screenshots)
@@ -115,14 +116,72 @@ Four things to know before you double-click them:
 
 ---
 
+## 📦 Dependencies
+
+Nothing is vendored and nothing is fetched during the build. Every source file is C++17
+standard library except the GUI, which is wxWidgets.
+
+| Tool | Version verified here | Needed for | How to get it |
+|---|---|---|---|
+| Xcode Command Line Tools (`clang++`) | Apple clang 16.0.0 | every macOS target | `xcode-select --install` |
+| GNU Make | 3.81 (system) | every target | preinstalled on macOS |
+| wxWidgets | 3.3.1 | `MWare-gui` | `brew install wxwidgets` |
+| mingw-w64 cross toolchain | 14.0.0 | `MWare.exe`, `sys_check.exe` | `brew install mingw-w64` |
+| **static** wxWidgets for MinGW | 3.2.6 | `MWare.exe` (GUI) | must be built, see below |
+
+### 🍎 One command for macOS
+
+```bash
+xcode-select --install            # clang++, make
+brew install wxwidgets mingw-w64  # macOS GUI + Windows cross toolchain
+```
+
+### 🪟 Static wxWidgets for the Windows GUI
+
+This is the only dependency you cannot get from a package manager. The Makefile
+refuses to start without it:
+
+```
+wxWidgets MinGW not found at /usr/local/wx-mingw/bin/wx-config.
+Install or compile wxWidgets for MinGW first.
+```
+
+The cross build links wxWidgets **statically**, so it needs a static Unicode build
+targeting `x86_64-w64-mingw32` — not the Homebrew one. The recipe below produces the
+3.2.6 tree this repository was built against:
+
+```bash
+curl -LO https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.6/wxWidgets-3.2.6.tar.bz2
+tar xjf wxWidgets-3.2.6.tar.bz2 && cd wxWidgets-3.2.6
+
+./configure --host=x86_64-w64-mingw32 --prefix=/usr/local/wx-mingw \
+            --disable-shared --enable-static --enable-unicode
+make -j"$(sysctl -n hw.ncpu)" && sudo make install           # ~10-15 min
+```
+
+> ⚠️ **These three commands are documented, not verified by this repo** — the tree was
+> already installed on the machine the release binaries came from. If your build lands
+> somewhere else, point `WX_MINGW_PREFIX` in the Makefile at it instead of moving files
+> into `/usr/local`.
+
+Static linking here is fine legally: the wxWindows Library Licence is LGPL plus an
+explicit exception for distributing binaries built against it, so the assets in the
+[Download](#-download) section need no additional source offer.
+
+### 🚫 What you do *not* need
+
+- **OpenSSL** — `MWare/tls_wrapper.{h,cpp}` is a leftover from the TLS era and is not in
+  `SRCS`; the wire protocol is raw TCP. Only `make cert` touches certificates, and it
+  shells out to the system `openssl` binary.
+- **CMake, vcpkg, Conan, Boost** — none are used; the build is a plain Makefile.
+- **Python** — only the old v5 packaging scripts (`build_v5.py`) use it. Nothing in
+  `make`, `make test` or the runtime needs an interpreter.
+
+---
+
 ## 🔨 Build
 
-### 🧰 Requirements
-
-- **macOS GUI + server** — `clang++` with C++17, wxWidgets 3.3 via Homebrew
-  (`brew install wxwidgets`), `make`.
-- **Windows cross-build** — `x86_64-w64-mingw32-g++` plus a static wxWidgets for
-  MinGW at `/usr/local/wx-mingw` (the Makefile errors out early if it is missing).
+Everything above installs in one command; this section is just which target to call.
 
 ### 🎯 Targets
 
