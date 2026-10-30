@@ -21,8 +21,12 @@
 
 > ❗ **Authorized use only** — your own lab, an isolated VM, a CTF, or a sanctioned
 > red-team engagement with written scope. Nothing here leaves the host: the "victim"
-> file is a 3-line text file created next to the binary, the decryption password is a
-> published constant. Read [📜 Legal](#-legal) before you build it.
+> file is a 3-line text file created next to the binary, and the decryption password is
+> a published constant.
+>
+> 🔑 **Decryption password: `WaspHive2024!`** — hardcoded in `MWare/crypto.cpp` on
+> purpose, not a secret, not meant to be one. Type it into the `UNLOCK FILES` field to
+> restore the encrypted file. Read [📜 Legal](#-legal) before you build it.
 
 ---
 
