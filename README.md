@@ -24,6 +24,11 @@
 > file is a 3-line text file created next to the binary, and the decryption password is
 > a published constant.
 >
+> 🎓 **Purpose:** the author wrote this repository as a study project — to learn how
+> ransomware and C2 frameworks actually work, line by line. It is not a product, not
+> maintained for operational use, and the author takes no responsibility for how it is
+> used. See [📜 Legal](#-legal).
+>
 > 🔑 **Decryption password: `WaspHive2024!`** — hardcoded in `MWare/crypto.cpp` on
 > purpose, not a secret, not meant to be one. Type it into the `UNLOCK FILES` field to
 > restore the encrypted file. Read [📜 Legal](#-legal) before you build it.
@@ -424,16 +429,35 @@ A clean static scan is easy to over-read, so:
 
 ## 📜 Legal
 
-This repository is a **simulation for authorized security work**: your own lab, an
-isolated VM, a CTF, or a sanctioned red-team engagement with written scope.
+### ⚖️ Disclaimer
 
-It encrypts exactly one file (`target.txt`) with a password that is published in the
-source, has no propagation, no anti-recovery wipe, and no working payment path.
-Running it against systems you do not own or have permission to test is illegal in
-most jurisdictions and is not an authorized use of this code.
+The author wrote this repository **as a learning exercise**. The goal was to
+understand — by building one — how ransomware and C2 frameworks actually work end to
+end: the cryptography, the wire protocol, the persistence, the evasion. Studying the
+technique and learning to detect it is the entire point. It is not a product, it is not
+maintained for operational use, and it is not offered as a service.
 
-Provided under the **MIT license**, with no warranty of any kind. You are responsible
-for how you use it.
+If you build, run, fork or copy any part of it, you accept that:
+
+- 🎓 **You are using it to study, to research, or to test systems you are authorized
+  to test** — and for nothing else.
+- 🧑‍⚖️ **Authorization and local law are your responsibility.** Running this against
+  systems you do not own, or have no written permission to test, is illegal in most
+  jurisdictions and is not an authorized use of this code.
+- 🚫 **The author accepts no liability** for damage, data loss, service disruption or
+  legal consequences arising from this code or from anything derived from it.
+- 🧪 **The only safe place to run it is a disposable VM or a lab machine** — not a work
+  laptop, not a shared server, not somebody else's network.
+
+### 🧾 What the simulation actually does
+
+It encrypts exactly one file (`target.txt`) with a password published in the source,
+has no propagation, no anti-recovery wipe and no working payment path. That is what
+makes it a simulation rather than a weapon: the destructive half of the technique is
+implemented, the distribution half is not.
+
+Provided under the **MIT license**, "as is", with no warranty of any kind and no
+support obligation.
 
 ---
 
