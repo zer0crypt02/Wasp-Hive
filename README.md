@@ -231,6 +231,28 @@ The PSK can also live in `psk.txt` next to the binary — that file is git-ignor
 
 ## 🖼️ Screenshots
 
+Both photos are of the same machine the release binaries came from: the ransom screen on
+the left, the operator console next to it. Click either one for full size.
+
+<div align="center">
+
+<a href="IMG/wasp-hive-gui.jpg">
+  <img src="IMG/wasp-hive-gui.jpg" width="45%"
+       alt="THE WASP HIVE ransom screen on macOS: bee emblem, countdown, DECRYPTION KEY field and UNLOCK FILES button">
+</a>
+&nbsp;
+<a href="IMG/rsw-c2-terminal.jpg">
+  <img src="IMG/rsw-c2-terminal.jpg" width="45%"
+       alt="RSW operator console in iTerm: banner, prompt and the help command palette">
+</a>
+
+<sub><b>MWare-gui</b> — the note, its countdown and the key field &nbsp;·&nbsp; <b>RSW</b> — the <code>help</code> command palette &nbsp;·&nbsp; <i>click for full size</i></sub>
+
+</div>
+
+> 🪤 The note's copy ("*every important file on this computer is locked*…") is the
+> standard deceptive wording a real ransom note uses. This build touches exactly one
+> file, `target.txt` — see [Legal](#-legal).
 
 ### 🖥️ C2 Server Terminal
 
@@ -313,6 +335,7 @@ MWare/
 
 tests/                    unit + e2e suites (wired into `make test`)
 RSW.cpp, rsw_protocol.*   C2 server and its stateless protocol layer
+IMG/                      screen photographs used in this README
 docs/screenshots/         VirusTotal result photos
 ```
 
